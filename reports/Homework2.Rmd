@@ -1,0 +1,656 @@
+---
+title: "Homework2"
+author: "Joaquin Rodriguez"
+date: "4/21/2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+# library(xlsx)
+library(knitr)
+library(boot)
+```
+
+```{r}
+crabs <- read.table("../data/crab.txt", header=T)
+names(crabs) <- c("n","color", "spine", "weight", "width", "satellites")
+
+```
+
+### 5.1 For the horseshoe crab data (available at www.stat.uﬂ.edu/∼aa/ intro-cda/appendix.html), ﬁt a model using weight and width as predictors.
+
+#### a. Report the prediction equation.
+
+```{r}
+crabs$probSat <- ifelse(crabs$satell>0, TRUE, FALSE)
+fit <- glm(probSat ~ weight + width, data= crabs, family = binomial('logit'))
+summary(fit)
+```
+
+$\theta=--9.3 \ +\ .30\ {weight}\ + .82\ {width}$
+
+#### b. Conduct a likelihood-ratio test of H 0 : β 1 = β 2 = 0. Interpret.
+```{r}
+fit0 <- glm(probSat ~ 1, data= crabs, family = binomial('logit'))
+anova(fit0, fit, test = 'Chisq')
+```
+
+The $\chi^2$ test indicates that the at least one parameter is significantly different than zero, as the p-value < 0.05.
+
+#### c. Conduct separate likelihood-ratio tests for the partial effects of each variable. Why does neither test show evidence of an effect when the test in (b) shows very strong evidence?
+WEIGTH:
+```{r}
+fitWE <- glm(probSat ~ width , data= crabs, family = binomial('logit'))
+summary(fitWE)
+anova(fit, fitWE, test='Chisq')
+```
+
+WIDTH:
+```{r}
+fitWI <- glm(probSat ~ weight , data= crabs, family = binomial('logit'))
+summary(fitWI)
+anova(fit, fitWI, test='Chisq')
+```
+
+```{r}
+crabs %>% 
+  ggplot(aes(weight, width))+
+  geom_point()
+```
+
+The correlation between width and height is quite high as we can observe from the above graph. Therefore we might have a collinearity issue in the model.
+
+### 5.8 Refer to the classiﬁcation table in Table 5.3 with π 0 = 0.50.
+
+
+#### a. Explain how this table was constructed.
+The table is construncted fitting different values for the sample proportion of 1 outcomes
+
+#### b. Estimate the sensitivity and speciﬁcity, and interpret.
+
+Sensitivity is the probability of a true positive. While, specificity is the probability of a true negative. s
+
+For $\pi_0= .64$ 
+```{r}
+#sensitivity
+74/(74+37)
+#specificity
+42/(42+20)
+```
+
+For $\pi_0= .50$ 
+```{r}
+#sensitivity
+94/(94+17)
+#specificity
+25/(37+25)
+```
+
+### 5.9 Problem 4.1 with Table 4.8 used a labeling index (LI) to predict π = the probability of remission in cancer patients.
+
+#### a. When the data for the 27 subjects are 14 binomial observations (for the 14 distinct levels of LI), the deviance for this model is 15.7 with df = 12. Is it appropriate to use this to check the ﬁt of the model? Why or why not?
+
+```{r}
+dt5.8 <- data.frame(LI= c(seq(8, 28, 2),32,34,38), 
+           cases=     c(2,2,3,3,3,1,3,2,1,1,1,1,1,3),
+           remissions=c(0,0,0,0,0,1,2,1,0,1,1,1,1,3))
+kable(dt5.8)
+```
+
+It is not reccomended tu use deviance to check the fit in models with continuous predictors.
+
+#### b. The model that also has a quadratic term for LI has deviance = 11.8. Conduct a test comparing the two models.
+The likelihood ration statistic for testing the parameter for quadratic term is zero = 3.9.  
+This test follows a chi-squared distribution with df = 1. Therefore, the p-value is ~ 0.05.
+
+#### c. Themodelin(b)hasﬁt, logit(π)ˆ = −13.096 + 0.9625(LI ) − 0.0160(LI) 2 , with SE = 0.0095 for β 2 = −0.0160. If you know basic calculus, explain why πˆ is increasing for LI between 0 and 30. Since LI varies between 8 and 38 in this sample, the estimated effect of LI is positive over most of its observed values.
+
+```{r}
+df5.9 <- data.frame(
+  linear= c(.9652*c(0:30)),
+  quadratic = c(-.0160*c(0:30)^2),
+  intercept=rep(-13.096,31))
+df5.9$eta <- df5.9$linear + df5.9$quadratic + df5.9$intercept
+
+df5.9 %>% tibble::rownames_to_column('LI') %>% mutate(LI=as.numeric(LI)) %>%  
+          gather(key = parameter, value = value, linear, quadratic, intercept, eta) %>% 
+          ggplot(data=. , aes(x = LI, y = value, color = parameter ) )+
+          geom_point()
+```
+
+I need to find the critical point where the slope turns negative, namely $\eta'=0\ +\ .96\ -\ 2LI\ .016= 30$
+
+#### d. For the model with only the linear term, the Hosmer–Lemeshow test statistic = 6.6 with df = 6. Interpret.
+
+The Hosmer–Lemeshow test shows good fit at different levels of LI. Therefore, the model is considered adequate.
+
+
+### 5.20 Refer to Table 2.7 on mother’s drinking and infant malformations.
+
+#### a. Fit the logistic regression model using scores {0, 0.5, 1.5, 4, 7} for alcohol consumption. Check goodness of ﬁt.
+Following we visualize the data in tabular form:
+```{r, echo=FALSE}
+df5.20 <- data.frame(alcohol=c(0,.5, 1.5,4,7), absent=c(17066, 14464,788,126, 37), present=c(48, 38, 5, 1,1))
+df5.20$total <- df5.20$absent+df5.20$present
+df5.20$percPres <- round(100*df5.20$present/df5.20$total,2)
+df5.20$cumulative <- cumsum(df5.20$total)
+kable(df5.20)
+```
+
+We then fit the model:
+```{r}
+fit1 <- glm(cbind(present, absent) ~ alcohol, family = binomial(logit),data=df5.20)
+summary(fit1)
+```
+
+```{r}
+fit0 <- glm( cbind(present, absent) ~ 1, family = binomial(logit), data=df5.20 )
+anova(fit0, fit1, test = 'Chisq')
+```
+
+Goodness of fit of the null model indicates that the full model fits better than the model with itercept only.
+
+#### b. Test independence using the likelihood-ratio test for the model in (a). (The trend test of Section 2.5.1 is the score test for this model.)
+
+Likelihood ratio test for model a(1) is the following:
+```{r}
+anova(fit1, test = 'Chisq')
+```
+
+#### c. The sample proportion of malformations is much higher in the highest alcohol category because, although it has only one malformation, its sample size is only 38. Are the results sensitive to this single observation? Re-ﬁt the model without it, entering 0 malformations for 37 observations, and comparetheresultsofthelikelihood-ratiotest. (Becauseresultsaresensitive to a single observation, it is hazardous to make conclusions, even though n was extremely large.)
+
+```{r}
+df5.20[5, c('absent', 'present', 'total')] <- c(37, 0, 37)
+df5.20[,1:3] %>% kable()
+summary(glm(cbind(absent, present) ~ alcohol, family = binomial(logit), data=df5.20))
+```
+
+The new model has a negative coefficient for alcohol where before it has positive. Furthermore, the coefficient from the new model is not significant for alcohol, where before it was.
+
+#### d. Fit the model and conduct the test of independence for all the data using scores {1, 2, 3, 4, 5}. Compare the results with (b). (Results for highly unbalanced data can be sensitive to the choice of scores.)
+
+```{r}
+df5.20 <- data.frame(alcohol=c(1:5), absent=c(17066, 14464,788,126, 37), present=c(48, 38, 5, 1,1))
+summary(glm(cbind(absent, present) ~ alcohol, family = binomial(logit), data=df5.20))
+```
+
+Again, as in task c, sign of the alcohol coefficient is now negative and is also non significant.
+
+### 5.27 About how large a sample is needed to test the hypothesis of equal probabilities sothatP(typeIIerror)=0.05whenπ 1 = 0.40andπ 2 = 0.60, ifthehypothesis is rejected when the P -value is less than 0.01?
+
+It appers that for both $\pi$ cases we need the same sample size, which is n equal to:
+```{r}
+library(Hmisc)
+bsamsize(.4,.6, fraction = .5, alpha = .01, power = .95)
+```
+
+### 6.1 A model ﬁt predicting preference for President (Democrat, Republican, Independent) using x = annual income (in $10,000 dollars) is log(πˆ D /πˆ I ) = 3.3 − 0.2x and log(πˆ R /πˆ I ) = 1.0 + 0.3x.
+
+#### a. State the prediction equation for log(πˆ R /πˆ D ). Interpret its slope.
+$ln(r/i) / ln(d/i) = (1 − 3.3) + (.3 − (−2))x2$
+
+#### b. Find the range of x for which πˆ R > πˆ D .
+Solution to $ln(r)\ - \ ln(d) >0 => -2.3 + .5x>0$.  
+
+This needs to be transformed in probability using $exp(\eta)/1+exp(\eta)$
+
+#### c. State the prediction equation for πˆ I .
+$\pi_i=\frac{1}{1\ + \ exp(3.3\ -\ .2x)\ +\ exp(1.0\ +\ .3x)}$
+
+### 6.6 Does marital happiness depend on family income? For the 2002 General Social Survey, counts in the happiness categories (not, pretty, very) were (6, 43, 75) for below average income, (6, 113, 178) for average income, and (6, 57, 117) for above average income. Table 6.15 shows output for a baseline-category logit model with very happy as the baseline category and scores {1, 2, 3} for the income categories.
+
+#### a. Report the prediction equations from this table.
+First, we define the categories considered:
+very happy = 3
+pretty happy = 2
+not happy = 1
+we can generalize as $j= 1, 2, 3$ 
+
+The prediction equation for this table is the following:
+$log(\frac{\pi_j}{\pi_3})= \alpha_j + \beta_jx$
+
+$log(\frac{\pi_1}{\pi_3})= -2.56 + -.23x$  
+
+$log(\frac{\pi_2}{\pi_3})= -.35 + -.10x$
+
+#### b. Interpret the income effect in the ﬁrst equation.
+When income increases of 1 unit, the odds that someone is not happy compared to the one that is very happy decrease by exp(-.23)=`r round(exp(-.23),2)` times. The odds that someone is pretty happy compared to happy decreases by y exp(-.10)=`r round(exp(-.1),2)` times.
+
+#### c. Report the Wald test statistic and P -value for testing that marital happiness is independent of family income. Interpret.
+The Wald test has p-value of 0.62, therefore we cannot reject conditional independence. Since we cannot reject indipendence we do not have evidence that income and happiness dependent
+
+#### d. Does the model ﬁt adequately? Justify your answer.
+Deviance is not significant, thus the model do not fit significantly different than the saturated model. Therefore, the model has an adequate fit.  
+$df + 2 \sqrt{2df} = 6$. Since Deviance is 3.19 < 6 we have evidence that the model fits adequately.
+
+#### e. Estimate the probability that a person with average family income reports a very happy marriage.
+The probability that a person with average income has a very happy family equals = 
+```{r}
+1/(1 + exp(-2.56-.23 * 2) + exp(-.35-.09 * 2))
+```
+
+
+### 6.7 Refer to the previous exercise. Table 6.16 shows output for a cumulative logit model with scores {1, 2, 3} for the income categories.
+
+#### a. Explain why the output reports two intercepts but one income effect.
+The assumption of the cumulative model is that a single $\beta$ has a common effect across different levels of happiness. The common $\beta$ for income guarantees that the curves have the same shape. The different intercepts enables the cumulative probabilities to differ, however the common $\beta$ guarantee that they do not intersect. 
+
+#### b. Interpret the income effect.
+$\beta$ is the effect of income on the log odds ratio of hapiness level at each salary level.
+
+#### c. Report a test statistic and P-value for testing that marital happiness is independent of family income. Interpret.
+The test statistic to test whether hapiness is independent of income is the LR. The Chi-square for the test is 0.88 with 1 DF. The p-value = .34 for the variable *income*, meaning we fail to reject independence. Therefore, we have evidence that income and happiness are independent.
+
+#### d. Does the model ﬁt adequately? Justify your answer.
+$df + 2 \sqrt{2df} = 7.89$. Since Deviance is 3.24 < 7.89 we have evidence that the model fits adequately.
+
+#### e. Estimate the probability that a person with average family income reports a very happy marriage
+```{r}
+1 -   ((exp(-.24*2.11)) / (1 + exp(-.24-2*.11)))
+```
+
+### 6.22 True, or false?
+
+#### a. One reason it is usually wise to treat an ordinal variable with methods that use the ordering is that in tests about effects, chi-squared statistics have smaller df values, so it is easier for them to be farther out in the tail and give small P-values; that is, the ordinal tests tend to be more powerful.
+
+TRUE
+
+#### b. The cumulative logit model assumes that the response variable Y is ordinal; it should not be used with nominal variables. By contrast, the baselinecategory logit model treats Y as nominal. It can be used with ordinal Y, but it then ignores the ordering information.
+
+TRUE
+
+#### c. If political ideology tends to be mainly in the moderate category in New Zealand and mainly in the liberal and conservative categories in Australia, then the cumulative logit model with proportional odds assumption should ﬁt well for comparing these countries.
+
+FALSE
+
+#### d. Logistic regression for binary Y is a special case of the baseline-category logit and cumulative logit model with J = 2.
+
+TRUE
+
+
+### 7.4 In a General Social Survey respondents were asked “Do you support or oppose the following measures to deal withAIDS? (1) Have the government pay all of the health care costs of AIDS patients; (2) develop a government information program to promote safe sex practices, such as the use of condoms.” Table 7.19 shows responses on these two items, classiﬁed also by the respondent’s gender.
+Denote the variables by G for gender, H for opinion on health care costs, and I for opinion on an information program.
+
+### a. Fit the model (GH, GI, HI) and test its goodness of ﬁt.
+```{r}
+library(MASS)
+df <- matrix(c(76, 6, 114, 11,160, 25, 181, 48), byrow = F, ncol=2)
+dimnames(df) <- list( InfOp=c('S','O', 'S', 'P'), HealthOp=c('S','O'))
+
+gg <- data.frame(support=c(76, 6, 114, 11), oppose=c(160, 25, 181, 48), gender=c('M', 'M', 'F','F'), InfOpinion=c('S','O', 'S', 'O'))
+
+tt <- xtabs(cbind(support, oppose) ~  InfOpinion + gender, data=gg)
+names(dimnames(tt))[3] <- 'HealthOpinion'
+loglm(~ gender*HealthOpinion + gender*InfOpinion + InfOpinion*HealthOpinion , tt)
+```
+
+The model fit adequately since (p for G=.3 with df 1) p-value for the LR test is .58.
+
+#### b. For this model, estimate the GI conditional odds ratio, construct a 95% conﬁdence interval, and interpret.
+```{r}
+df <- as.data.frame(tt)
+glm(Freq ~ gender*HealthOpinion + gender*InfOpinion + InfOpinion*HealthOpinion, data=tt, family='poisson') %>% summary(.)
+```
+
+$\theta = e^{0.4636} = 1.589787$
+
+95% CI for $\theta = e^{0.4636 ± 1.96 (0.2406)} = (0.9920557, 2.547662)$ 
+
+Given that gender is male, the odds of respondent to embrace a goverment information program are at least one and at most 2.5 times the odds that the respondent will not support the goverment information program.
+
+#### c. Given the model, test whether G and I are conditionally independent. Do you think the GI term needs to be in the model?
+```{r}
+loglm(~ gender + InfOpinion + gender*InfOpinion , tt)
+```
+
+The gender and information opinion are not conditional independent.
+
+### 7.5 Refer to Table 2.10 on death penalty verdicts. Let D = defendant’s race, V = victim’s race, and P = death penalty verdict. Table 7.20 shows output for ﬁtting model (DV, DP, PV ). Estimates equal 0 at the second category for any variable.
+
+#### a. Report the estimated conditional odds ratio between D and P at each level of V . Interpret.
+```{r}
+exp(-.86)
+```
+
+Keeping v costant, the odds of receiving a death penalty when the defendands is white are .42% of the odds of receiving a death penalty when the defendands is black.
+
+#### b. The marginal odds ratio between D and P is 1.45. Contrast this odds ratio with that in (a), and remark on how Simpson’s paradox occurs for these data.
+The marginal odds ratio between is interpreted as: the odds of receiving a death penalty when the defendands is white is 45% higher than the odds of receiving the death penalty when the defendand is black.
+
+#### c. Test the goodness of ﬁt of this model. Interpret.
+We perform a chi-squared test with 1 DF.
+```{r}
+pchisq(.38, 1, lower.tail = F)
+```
+
+The model has an adequate fit.
+
+#### d. Specify the corresponding logistic model with P as the response.
+$\theta=\alpha\ +\ \beta_{race}x\ + \beta_{victim}x$
+
+where x is an indicator variable $(0,1)$
+
+### 7.10 Table 7.24 is based on automobile accident records in 1988, supplied by the state of Florida Department of Highway Safety and Motor Vehicles. Subjects were classiﬁed by whether they were wearing a seat belt, whether ejected, and whether killed.
+
+#### a. Find a loglinear model that describes the data well. Interpret the associations.
+
+```{r}
+gg <- data.frame(nonfatal=c(1105, 411111,4624,157342), 
+                 fatal=c(114,483,497,1008), 
+                 ejected=c('Y', 'N', 'Y','N'), 
+                 seatbelt=c('S','S', 'None', 'None'))
+
+tt <- xtabs(cbind(nonfatal, fatal) ~  ejected + seatbelt, data=gg)
+names(dimnames(tt))[3] <- 'injury'
+loglm(~ seatbelt*ejected + seatbelt*injury + ejected*injury, data=tt)
+```
+
+```{r}
+tt <- as.data.frame(tt)
+glm(Freq ~ seatbelt*ejected + seatbelt*injury + ejected*injury, data=tt, family='poisson') %>% summary(.)
+```
+
+This model is an an homogeneous association model. All terms are significant, therefore we have evidence that all terms are conditionally dependent on another, given the third variable is maintained fixed. 
+
+#### b. Treating whether killed as the response variable, ﬁt an equivalent logistic model. Interpret the effects on the response.
+**b**
+```{r, echo=FALSE}
+
+gg %>% 
+  #need some reshaping to have a longitudinal dataset with all numeric values on 1 column
+  gather(killed, tot, -ejected, -seatbelt) %>% 
+  mutate(killed= ifelse(killed=='fatal', 1, 0)) -> gg
+
+glm(killed ~ seatbelt * ejected ,family=poisson(link=log), weights=tot, data= gg ) -> fit
+summary(fit)
+```
+
+```{r}
+exp(1.65386)
+```
+
+Given the person was ejected, the odds of being killed when you do not wear a seat are 5.2 times the odds of being kill when you wear a seatbelt.
+
+#### c. Since the sample size is large, goodness-of-ﬁt statistics are large unless the model ﬁts very well. Calculate the dissimilarity index, and interpret.
+
+The dissimilarity index is $D=\sum|n_i - \hat{\mu}_i| / 2n$ 
+```{r}
+sum(residuals(fit))/ (2 * sum(gg$tot))
+```
+The similarity index is quite small, suggesting that the model follows the observed data quite reliably.
+
+### 7.18 For a three-way table, consider the independence graph X----Z      Y
+
+#### a. Write the corresponding loglinear model.
+$log(\mu_{ij}) =  \lambda + \lambda^X_{i} + \lambda^Y_{j} + \lambda^Z_{j} + \lambda^{XZ}_{ij}$
+
+#### b. Which, if any, pairs of variables are conditionally independent?
+Pairs $(XY, ZY)$ are conditionally independent.
+
+#### c. If Y is a binary response, what is the corresponding logistic model?
+$log(\theta)=\alpha$
+
+#### d. Which pairs of variables have the same marginal association as their conditional association?
+$(X, Y)$
+
+### 7.19 Consider loglinear model (WXZ, WYZ).
+
+#### a. Draw its independence graph, and identify variables that are conditionally independent.
+```{r, fig.width= 3, fig.height= 3}
+#source("http://bioconductor.org/biocLite.R")
+#biocLite(c("graph", "RBGL", "Rgraphviz"))
+library(graph)
+library(gRbase)
+library(gRain)
+g1 <- ug(~W:X:Z + W:Y:Z)
+g1
+plot(g1)
+```
+
+XY are conditionally independent
+
+#### b. Explain why this is the most general loglinear model for a four-way table for which X and Y are conditionally independent.
+Because this model includes all possible interaction terms expect from the 4-vars interaction term and  the XY association.
+
+### 7.24 Table 7.28 is from a General Social Survey. Subjects were asked whether methods of birth control should be available to teenagers between the ages of 14 and 16, and how often they attend religious services.
+
+#### a. Fit the independence model, and use residuals to describe lack of ﬁt.
+
+```{r}
+dt <- data.frame(
+ReligiousAttendance=c('Never', 'Less than once a  year', 'Once or twice a year', 'Several times a year', "About once a month",'2-3 times a month','Nearly every week', 'Every week', 'several times a week'), 
+StronglyAgree=c(49,31,46,34,21,26,8,32,4),
+Agree=c(49,27,55,37,22,36,16,65,17),
+Disagree=c(19,11,25,19,14,16,15,57,16),
+StronglyDisagree=c(9,11,8,7,16,16,11,61,20))
+dt %>% kable(caption='Data for problem 7.24')
+dt %>% gather(birthControl, Freq, -ReligiousAttendance) %>% 
+  xtabs(Freq ~ ReligiousAttendance + birthControl, data=.) -> tb
+```
+
+```{r}
+tt <- as.data.frame(tb)
+glm(Freq ~ birthControl + ReligiousAttendance, data=tt, family='poisson') -> fit
+summary(fit)
+glm.diag(fit)$rp
+```
+
+We have evidence that the model does not fit accurately the data since many predicted values have high (i.e. > 2-3) standardized residuals.
+
+#### b. Using equally spaced scores, ﬁt the linear-by-linear association model. Describe the association.
+
+```{r}
+dt <- 
+  tt %>% 
+  mutate(ReligiousAttendance = 
+           case_when(ReligiousAttendance == "Never" ~ 0,
+                     ReligiousAttendance == "Less than once a  year" ~ 1,
+                     ReligiousAttendance == "Once or twice a year" ~ 2,
+                     ReligiousAttendance == "Several times a year" ~ 3,
+                     ReligiousAttendance == "About once a month" ~ 4,
+                     ReligiousAttendance == "2-3 times a month" ~ 5,
+                     ReligiousAttendance == "Nearly every week" ~ 6,
+                     ReligiousAttendance == "Every week" ~ 7,
+                     ReligiousAttendance == "several times a week" ~ 8
+                     )) %>% 
+  mutate(birthControl =
+           case_when(birthControl == "StronglyDisagree" ~ 0,
+                     birthControl == "Disagree" ~ 1,
+                     birthControl == "Agree" ~ 2,
+                     birthControl == "StronglyAgree" ~ 3))
+
+fit <-glm(Freq ~ factor(ReligiousAttendance)+factor(birthControl)+I(ReligiousAttendance*birthControl), family=poisson, data=dt)
+summary(fit)
+```
+
+The ﬁnal term in model represents the deviation of $log (\mu_{ij})$ from independence.
+In this case $\beta$ < 0, therefore there is a tendency for Y to decrease as X increases.
+
+#### c. Test goodness of ﬁt of the model in (b); test independence in a way that uses the ordinality, and interpret.
+We can perform a chi-square test using the residual deviance from the model. 
+
+```{r}
+pchisq(19.901, 23, lower.tail = F)
+```
+
+Furthermore, we can approximate the threshold with the following formula:
+$df + 2 \sqrt{2df} = 23.58$
+
+As model deviance is 19.9 we have evidence that the model fits adequately the data.
+
+#### d. Fit the L × L model using column scores {1, 2, 4, 5}. Repeat (b), and indicate whether results are substantively different with these scores.
+
+```{r}
+dt %>% 
+  subset(!birthControl == 3) %>% 
+  glm(Freq ~ factor(ReligiousAttendance)+factor(birthControl)+I(ReligiousAttendance*birthControl), family=poisson, data=.) -> fit2
+
+summary(fit2)
+```
+
+The final term in the model that represents the linear-by-linear association remains almost unchanged. The new value of $\beta$ is -0.12148 compared to the previous -0.12110.
+
+#### e. Using formula (7.12) with the model in (d), explain why a ﬁtted local log odds ratio using columns 2 and 3 is double a ﬁtted local log odds ratio using columns 1 and 2 or columns 3 and 4. What is the relationship between the odds ratios?
+The relationship between the odds ratios is the following:
+$\frac{\mu_{ab} \mu_{cd}}{\mu_{ad} \mu_{cb}} = e^{\beta(\mu_{c}-\mu_{a})(v_{d}v_{b})}$
+
+If the log odds ratios using consecutive colummns 2 and 3 and 1 and 2 are not equal means that we are not using consecutive rows. In fact, $e^\beta$ indicate the odds ratio of a local consecutive columns and rows.
+
+### 8.2 A recent General Social Survey asked subjects whether they believed in heaven and whether they believed in hell. Table 8.10 shows the results.
+
+#### a. Test the hypothesis that the population proportions answering “yes” were identical for heaven and hell. Use a two-sided alternative.
+
+```{r, echo=FALSE}
+data.frame(believeHell=c(T,T,F,F), believeHeaven=c(T,F,T,F), tot=c(833,2, 125,160)) %>% 
+  xtabs(tot ~ believeHell + believeHeaven, data=.) -> believes
+  mcnemar.test(believes)
+```
+
+The two proportions are not equal. He have strong evidence supporting that people believe more in heaven than in hell.
+
+#### b. Find a 90% conﬁdence interval for the difference between the population proportions. Interpret.
+
+```{r}
+#standard error
+se <- sqrt(
+  sum(believes[1,2],believes[2,1]) - (believes[1,2] - believes[2,1])^2/sum(believes))/sum(believes)
+
+believes[2,1]/believes[1,2]
+
+#believers in heaven
+(833+125)/sum(believes)
+#believers in hell
+(833+2)/sum(believes)
+#confidence interval
+((833+125)/sum(believes) - (833+2)/sum(believes)) + c(-1,1)* 1.645*se
+```
+
+### 8.13 Table 8.12, from the 2004 General Social Survey, reports subjects’ religious afﬁliation in 2004 and at age 16, for categories (1) Protestant, (2) Catholic, (3) Jewish, (4) None or Other.
+
+```{r, echo=FALSE}
+library(gnm)
+affiliation <- as.table(matrix(c(1228,39,2,158,100,649,1,107,1,0,54,9,73,12,4,137), nrow=4,
+            dimnames=list(affiliation16 = c('protestant','catholic','jewish', 'other'), 
+                          affiliationNow = c('protestant','catholic','jewish', 'other'))))
+kable(affiliation)
+```
+
+#### a. The symmetry model has deviance G 2 = 150.6 with df = 6. Use residuals for the model [see equation (8.9)] to analyze transition patterns between pairs of religions.
+
+
+```{r}
+symmetric <- glm(Freq ~ Symm(affiliation16,affiliationNow), family=poisson, data=affiliation)
+#the sum of the squares of the residuuals equals chi-sq for testing the model fit
+sum(residuals(symmetric)^2)
+```
+
+The value of the residuals expresses the distance of each cells from the count predicted by a symmetric model. They indicate the relationship between the odds for the corresponding pair.
+```{r}
+residuals(symmetric)
+```
+
+#### b. The quasi-symmetry model has deviance G 2 = 2.3 with df = 3. Interpret.
+
+```{r}
+quasi.symm <-  glm(Freq ~ affiliation16 + affiliationNow + Symm(affiliation16, affiliationNow), family = poisson, data=affiliation)
+quasi.symm$deviance
+quasi.symm$df.residual
+```
+
+#### c. Test marginal homogeneity by comparing ﬁts in (a) and (b). (The small P-value mainly reﬂects the large sample size and is due to a small decrease in the proportion classiﬁed Catholic and increase in the proportion classiﬁed None or Other, with little evidence of change for other categories.)
+
+Testing the quasi symmetry versus the symmetry model is equivalent to test the hypothesis of marginal homogeneity
+```{r}
+anova(symmetric, quasi.symm, test = 'Chisq')
+```
+
+### 8.16 Table 8.15 is from a General Social Survey. Subjects were asked “How often do you make a special effort to buy fruits and vegetables grown without pesticides or chemicals?” and “How often do you make a special effort to sort glass or cans or plastic or papers and so on for recycling?” The categories are 1 = always, 2 = often or sometimes, 3 = never. Analyze these data using the (a) symmetry, (b) quasi-symmetry, (c) ordinal quasi-symmetry models. Prepare a two-page report summarizing your analyses.
+
+```{r, echo=FALSE}
+recycle <- as.table(matrix(c(66,39,3,227,359,48,150,216,108), nrow = 3,  
+         dimnames=list(recycle = c(1:3), chemicalFree=c(1:3) )
+         ))
+recycle
+recycle <-  as.data.frame(recycle) 
+```
+
+#### a.
+
+```{r}
+glm(Freq ~ Symm(chemicalFree, recycle), family=poisson, data=recycle)
+```
+
+#### b.
+
+```{r}
+glm(Freq ~ chemicalFree + recycle + Symm(chemicalFree, recycle), family=poisson, data=recycle)
+```
+
+#### 8.24 Table 8.19 summarizes results of tennis matches for several women professional players between 2003 and 2005.
+
+```{r, echo=FALSE}
+tennis <-   as.table(matrix(c(NA, 6, 3, 0, 2, 
+                     2, NA, 0, 2, 4, 
+                     1, 2, NA, 0, 1,
+                     2, 2, 2, NA, 2,
+                     3, 2, 2, 2, NA), ncol=5, dimnames=list(
+                       loser = c('Clisters','Davenport','Pierce','S.Williams','V.Williams'), 
+                       winner=c('Clisters','Davenport','Pierce','S.Williams','V.Williams')
+                       )))
+kable(tennis)
+```
+
+#### a. Fit the Bradley–Terry model. Report the parameter estimates, and rank the players.
+R sets by default $\lambda_1=0$ rather than the last one.
+```{r}
+library(BradleyTerry2)
+tennis.sf <- countsToBinomial(tennis)
+tennis.sf
+tennisModel <- BTm(cbind(win1, win2), player1, player2, ~ player, id = "player", data = tennis.sf)
+summary(tennisModel)
+```
+
+The rank of the players is: Pierce, Davenport, V.Williams, S.Williams, Clisters
+ 
+#### b. Estimate the probability that Serena Williams beats Venus Williams. Compare the model estimate to the sample proportion.
+
+Following we compute the probability that S.Williams beats V.Williams:
+ 
+```{r}
+dd <- - 0.3918051 -  0.1674125  
+exp(dd)/(1+exp(dd))
+```
+
+#### c. Construct a 90% conﬁdence interval for the probability that SerenaWilliams beats Venus Williams. Interpret.
+Following we compute the 90% CI probability that S.Williams beats V.Williams:
+
+```{r}
+vcov(tennisModel)
+ddci <- dd + c(-1,1) * qnorm(.90) * sqrt(0.5314855 + 0.3552130 + 2*0.2013243)
+
+exp(ddci) / (1 + exp(ddci))
+```
+
+The probability that S.Williams beats V.Williams is between 11% and 71%. The CI of one winning includes 50%, therefore, it is difficult to predict a winner.
+
+#### d. Show that the likelihood-ratio test for testing that all β i = 0 has test statistic 2.6, based on df = 4. Hence, it is plausible, based on this small sample, that no differences exist among the players in the chance of victory.
+
+The $\Delta Dev$ 
+
+```{r}
+tennisModel$null.deviance - tennisModel$deviance
+```
+
+And the difference in degrees of freedom is 10-6=4
+
+Thus 
+```{r}
+pchisq(tennisModel$null.deviance - tennisModel$deviance, 4)
+```
+
+Cannot reject the null hypothesis that at least 1 $\beta \neq0$. This might indicate that the models is not a good fit for the data.
